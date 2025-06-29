@@ -16,7 +16,7 @@ app = Flask(__name__)
 
 # --- Variáveis Globais para gerenciar o estado do treinamento ---
 num_clients_expected = 3  # Número esperado de clientes
-rounds = 50
+rounds = 30
 current_round = 0
 received_params_this_round = {}  # Dicionário para mapear client_id -> parâmetros
 active_clients = {}  # Dicionário para rastrear clientes ativos - {client_id: last_active_timestamp}
@@ -145,19 +145,19 @@ def submit_parameters():
 
                 # Avalia o modelo após a agregação
                 loss, accuracy = evaluate_model(global_parameters, test_loader)
-                print("="*50)
+                print("="*30)
                 print(f"Servidor: Rodada {current_round + 1} CONCLUÍDA com {num_clients_this_round} clientes")
                 print(f"Desempenho do Modelo Global: Perda = {loss:.4f} | Acurácia = {accuracy:.2f}%")
-                print("="*50)
+                print("="*30)
                 
                 # Limpa os parâmetros recebidos para a próxima rodada
                 received_params_this_round.clear()
                 current_round += 1
 
                 if current_round >= rounds:
-                    print("="*50)
+                    print("="*30)
                     print("Servidor: Treinamento global CONCLUÍDO!")
-                    print("="*50)
+                    print("="*30)
                     
                     # Salva o modelo final com timestamp
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -275,14 +275,14 @@ def heartbeat():
 
 if __name__ == "__main__":
     # Avalia o modelo inicial (aleatório) para ter uma linha de base
-    print("\n" + "="*50)
+    print("\n" + "="*30)
     print("SERVIDOR DE APRENDIZADO FEDERADO")
-    print("="*50)
+    print("="*30)
     print("Configurações:")
     print(f"- Número esperado de clientes: {num_clients_expected}")
     print(f"- Timeout de cliente: {client_timeout_seconds} segundos")
     print(f"- Rodadas de treinamento: {rounds}")
-    print("="*50)
+    print("="*30)
     
     print("\nAvaliando o modelo inicial (antes do treinamento)...")
     initial_loss, initial_accuracy = evaluate_model(global_parameters, test_loader)

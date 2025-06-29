@@ -246,13 +246,13 @@ if __name__ == "__main__":
     peak_memory_usage = 0
     
     # Número de rodadas de treinamento
-    num_rounds = 50
+    num_rounds = 30
     heartbeat_interval = 10  # segundos
     last_heartbeat_time = 0
 
-    print(f"\n{'='*50}")
+    print(f"\n{'='*30}")
     print(f"CLIENTE DE APRENDIZADO FEDERADO - ID: {client_id}")
-    print(f"{'='*50}")
+    print(f"{'='*30}")
     
     # 1. Registrar cliente no servidor
     print(f"Cliente {client_id}: Registrando no servidor...")
@@ -362,7 +362,7 @@ if __name__ == "__main__":
     
     # Ao final de todas as rodadas salva as métricas em um Excel
     excel_file = metrics.save_to_excel()
-    print(f"\n{'='*50}")
+    print(f"\n{'='*30}")
     print(f"Cliente {client_id}: Processo de treinamento federado concluído.")
     print(f"Análise detalhada disponível em: {excel_file}")
-    print(f"{'='*50}")
+    print(f"{'='*30}")
