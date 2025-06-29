@@ -20,7 +20,7 @@ rounds = 50
 current_round = 0
 received_params_this_round = {}  # Dicionário para mapear client_id -> parâmetros
 active_clients = {}  # Dicionário para rastrear clientes ativos - {client_id: last_active_timestamp}
-client_timeout_seconds = 60  # Tempo em segundos para considerar um cliente como inativo
+client_timeout_seconds = 180  # Tempo em segundos para considerar um cliente como inativo
 training_started = False  # Flag para indicar se o treinamento começou
 lock = threading.Lock()
 
