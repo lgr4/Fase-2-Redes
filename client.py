@@ -230,6 +230,54 @@ def check_training_status():
         print(f"Erro ao verificar status do treinamento: {e}")
         return None
 
+def wait_for_round_completion(client_id, current_round):
+    """Aguarda até que todos os clientes ativos tenham enviado seus parâmetros para a rodada atual."""
+    print(f"Cliente {client_id}: Aguardando que todos os clientes concluam a rodada {current_round+1}...")
+    
+    # Tempo máximo de espera: 5 minutos
+    max_wait_time = 300  # segundos
+    start_wait_time = time.time()
+    wait_interval = 5  # verificar a cada 5 segundos
+    
+    while (time.time() - start_wait_time) < max_wait_time:
+        status_data = check_training_status()
+        
+        if not status_data:
+            print(f"Cliente {client_id}: Não foi possível verificar o status do servidor. Tentando novamente...")
+            time.sleep(wait_interval)
+            continue
+            
+        server_round = status_data.get('current_round', 0)
+        
+        # Se o servidor já avançou para a próxima rodada, podemos prosseguir
+        if server_round > current_round:
+            print(f"Cliente {client_id}: Servidor avançou para a rodada {server_round+1}. Prosseguindo...")
+            return True
+            
+        # Se estamos na mesma rodada, verificar se todos os clientes enviaram seus parâmetros
+        if server_round == current_round:
+            clients_active = status_data.get('clients_connected', 0)
+            params_received = status_data.get('received_parameters', 0)
+            
+            print(f"Cliente {client_id}: Aguardando parâmetros dos clientes... "
+                  f"Recebidos: {params_received}/{clients_active}")
+                  
+            # Se todos os clientes ativos enviaram seus parâmetros, mas o servidor ainda
+            # não avançou de rodada, continuamos esperando (agregação em andamento)
+            if params_received >= clients_active:
+                print(f"Cliente {client_id}: Todos os clientes enviaram seus parâmetros. "
+                      f"Aguardando agregação do servidor...")
+                
+        # Enviar heartbeat enquanto espera para manter o cliente ativo
+        send_heartbeat(client_id)
+        
+        # Aguardar um pouco antes de verificar novamente
+        time.sleep(wait_interval)
+    
+    # Se excedemos o tempo máximo de espera, prosseguimos mesmo assim
+    print(f"Cliente {client_id}: Tempo máximo de espera excedido. Prosseguindo para a próxima rodada...")
+    return False
+
 # --- Lógica Principal do Cliente ---
 if __name__ == "__main__":
     if len(sys.argv) != 2:
@@ -353,12 +401,15 @@ if __name__ == "__main__":
             if server_round >= total_rounds:
                 print(f"Cliente {client_id}: Servidor concluiu todas as rodadas. Finalizando cliente.")
                 break
+        
+        # TRAVA: Aguardar que todos os clientes concluam a rodada atual antes de prosseguir
+        wait_for_round_completion(client_id, round_num)
 
         # Aguarda um tempo antes da próxima rodada e envia heartbeat
-        print(f"Cliente {client_id}: Aguardando próxima rodada...")
+        print(f"Cliente {client_id}: Preparando-se para a próxima rodada...")
         send_heartbeat(client_id)
         last_heartbeat_time = time.time()
-        time.sleep(5)
+        time.sleep(2)
     
     # Ao final de todas as rodadas salva as métricas em um Excel
     excel_file = metrics.save_to_excel()
