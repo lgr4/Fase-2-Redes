@@ -138,40 +138,97 @@ class MetricsTracker:
         
         return filename
 
-def get_global_model():
+def get_global_model(client_id):
     """Busca o modelo global mais recente do servidor."""
     try:
         start_time = time.time()
-        response = requests.get(f"{SERVER_URL}/get_model")
+        response = requests.get(f"{SERVER_URL}/get_model?client_id={client_id}")
         response.raise_for_status()
         download_duration = time.time() - start_time # Medição correta do tempo de download
         
+        # Verificar se a resposta é um erro JSON
+        if response.headers.get('content-type') == 'application/json':
+            data = response.json()
+            if data.get('status') == 'error':
+                print(f"Cliente {client_id}: {data.get('message', 'Erro ao obter modelo')}")
+                return None, 0, 0
+        
         payload_size = len(response.content) / 1024 # KB
-        print(f"Cliente: Tamanho do modelo global recebido: {payload_size:.2f} KB")
-        print(f"Cliente: Tempo para baixar modelo global: {download_duration:.4f}s")
+        print(f"Cliente {client_id}: Tamanho do modelo global recebido: {payload_size:.2f} KB")
+        print(f"Cliente {client_id}: Tempo para baixar modelo global: {download_duration:.4f}s")
         
         parameters = pickle.loads(response.content)
         return parameters, payload_size, download_duration
     except requests.exceptions.RequestException as e:
-        print(f"Erro ao conectar com o servidor: {e}")
+        print(f"Cliente {client_id}: Erro ao conectar com o servidor: {e}")
         return None, 0, 0
 
-def send_trained_parameters(parameters):
+def send_trained_parameters(client_id, parameters):
     """Envia os parâmetros treinados para o servidor."""
     serialized_params = pickle.dumps(parameters)
     # Medição mais precisa do tamanho do payload
     payload_size = len(serialized_params) / 1024  # KB
-    print(f"Cliente: Tamanho dos parâmetros enviados: {payload_size:.2f} KB")
+    print(f"Cliente {client_id}: Tamanho dos parâmetros enviados: {payload_size:.2f} KB")
 
     headers = {'Content-Type': 'application/octet-stream'}
     
     # Medir o tempo de serialização E envio
     start_time = time.time()
-    response = requests.post(f"{SERVER_URL}/submit_parameters", data=serialized_params, headers=headers)
+    response = requests.post(f"{SERVER_URL}/submit_parameters?client_id={client_id}", 
+                            data=serialized_params, headers=headers)
     upload_duration = time.time() - start_time
-    print(f"Cliente: Tempo para enviar parâmetros: {upload_duration:.4f}s")
+    print(f"Cliente {client_id}: Tempo para enviar parâmetros: {upload_duration:.4f}s")
     
     return response, payload_size, upload_duration
+
+def register_client(client_id):
+    """Registra o cliente no servidor."""
+    try:
+        response = requests.post(f"{SERVER_URL}/register", json={"client_id": client_id})
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get('status') == 'success':
+            clients_connected = data.get('clients_connected', 0)
+            clients_expected = data.get('clients_expected', 0)
+            training_started = data.get('training_started', False)
+            
+            print(f"Cliente {client_id}: Registrado com sucesso. "
+                  f"Clientes conectados: {clients_connected}/{clients_expected}")
+            
+            return training_started
+        else:
+            print(f"Cliente {client_id}: Falha no registro. Mensagem: {data.get('message', 'Desconhecida')}")
+            return False
+    except requests.exceptions.RequestException as e:
+        print(f"Cliente {client_id}: Erro ao conectar com o servidor para registro: {e}")
+        return False
+
+def send_heartbeat(client_id):
+    """Envia sinal de heartbeat para o servidor."""
+    try:
+        response = requests.post(f"{SERVER_URL}/heartbeat", json={"client_id": client_id})
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get('status') == 'success':
+            return data.get('training_started', False)
+        else:
+            print(f"Cliente {client_id}: Falha no heartbeat. Mensagem: {data.get('message', 'Desconhecida')}")
+            return False
+    except requests.exceptions.RequestException as e:
+        print(f"Cliente {client_id}: Erro ao enviar heartbeat: {e}")
+        return False
+
+def check_training_status():
+    """Verifica o status atual do treinamento no servidor."""
+    try:
+        response = requests.get(f"{SERVER_URL}/status")
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Erro ao verificar status do treinamento: {e}")
+        return None
 
 # --- Lógica Principal do Cliente ---
 if __name__ == "__main__":
@@ -187,16 +244,46 @@ if __name__ == "__main__":
     
     # Para rastrear o pico de memória
     peak_memory_usage = 0
+    
+    # Número de rodadas de treinamento
+    num_rounds = 50
+    heartbeat_interval = 10  # segundos
+    last_heartbeat_time = 0
 
-    num_rounds = 30
+    print(f"\n{'='*50}")
+    print(f"CLIENTE DE APRENDIZADO FEDERADO - ID: {client_id}")
+    print(f"{'='*50}")
+    
+    # 1. Registrar cliente no servidor
+    print(f"Cliente {client_id}: Registrando no servidor...")
+    training_started = False
+    
+    while not training_started:
+        training_started = register_client(client_id)
+        if not training_started:
+            status = check_training_status()
+            if status and status.get('clients_connected') > 0:
+                print(f"Cliente {client_id}: Aguardando início do treinamento... "
+                      f"({status.get('clients_connected')}/{status.get('clients_expected')} clientes conectados)")
+            else:
+                print(f"Cliente {client_id}: Aguardando conexão com o servidor...")
+            time.sleep(5)
+    
+    print(f"Cliente {client_id}: Treinamento iniciado! Começando rodadas de treinamento.")
 
     for round_num in range(num_rounds):
         print(f"\n--- Rodada {round_num + 1}/{num_rounds} ---")
         round_start_time = time.time()
+        
+        # Enviar heartbeat periodicamente
+        current_time = time.time()
+        if current_time - last_heartbeat_time > heartbeat_interval:
+            send_heartbeat(client_id)
+            last_heartbeat_time = current_time
 
         # 1. Obter modelo global
         print(f"Cliente {client_id}: Solicitando modelo global do servidor...")
-        global_params, download_size, download_time = get_global_model()
+        global_params, download_size, download_time = get_global_model(client_id)
 
         if global_params is None:
             print(f"Cliente {client_id}: Falha ao obter modelo global. Abortando rodada.")
@@ -230,7 +317,7 @@ if __name__ == "__main__":
 
         # 3. Enviar parâmetros atualizados
         print(f"Cliente {client_id}: Enviando parâmetros atualizados para o servidor...")
-        response, upload_size, upload_time = send_trained_parameters(updated_parameters)
+        response, upload_size, upload_time = send_trained_parameters(client_id, updated_parameters)
 
         if response and response.status_code == 200:
             print(f"Cliente {client_id}: Parâmetros enviados com sucesso.")
@@ -251,11 +338,31 @@ if __name__ == "__main__":
             peak_memory=peak_memory_usage
         )
 
-        # Aguarda um tempo para a próxima rodada
-        print("Aguardando próxima rodada...")
+        # Verificar status do treinamento no servidor
+        status_data = check_training_status()
+        if status_data:
+            server_round = status_data.get('current_round', 0)
+            total_rounds = status_data.get('total_rounds', num_rounds)
+            clients_active = status_data.get('clients_connected', 0)
+            
+            print(f"Cliente {client_id}: Status do servidor - "
+                  f"Rodada: {server_round}/{total_rounds}, "
+                  f"Clientes ativos: {clients_active}")
+            
+            # Se o servidor já completou todas as rodadas, podemos parar
+            if server_round >= total_rounds:
+                print(f"Cliente {client_id}: Servidor concluiu todas as rodadas. Finalizando cliente.")
+                break
+
+        # Aguarda um tempo antes da próxima rodada e envia heartbeat
+        print(f"Cliente {client_id}: Aguardando próxima rodada...")
+        send_heartbeat(client_id)
+        last_heartbeat_time = time.time()
         time.sleep(5)
     
     # Ao final de todas as rodadas salva as métricas em um Excel
     excel_file = metrics.save_to_excel()
-    print(f"\nProcesso de treinamento federado concluído. {num_rounds} rodadas completadas.")
+    print(f"\n{'='*50}")
+    print(f"Cliente {client_id}: Processo de treinamento federado concluído.")
     print(f"Análise detalhada disponível em: {excel_file}")
+    print(f"{'='*50}")
